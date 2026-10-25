@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">存档吧！</string>
+    <string name="title_activity_main">存档吧！</string>
+    <string name="package_name">com.cundangba.app</string>
+    <string name="custom_url_scheme">com.cundangba.app</string>
+</resources>

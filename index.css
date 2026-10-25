@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 默认主题（暖橙治愈）CSS 变量预置：ConfigProvider 挂载注入前首屏不闪烁。
+   十六进制变量为 PRD 规定格式；--*-rgb 为 Tailwind 透明度修饰符所需的通道值，
+   由 ConfigContext 按当前主题同步覆盖。 */
+:root {
+  --bg: #faf7f0;
+  --primary: #ff8c42;
+  --accent: #a8c8e8;
+  --text: #333333;
+  --text-sub: #666666;
+  --bg-rgb: 250 247 240;
+  --primary-rgb: 255 140 66;
+  --accent-rgb: 168 200 232;
+  --text-rgb: 51 51 51;
+  --text-sub-rgb: 102 102 102;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #20242b;
+}
+
+/* 移动端点击去除蓝色高亮闪烁 */
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer utilities {
+  /* 隐藏横向滚动条（日历页预报横滚列表） */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

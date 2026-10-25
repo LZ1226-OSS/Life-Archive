@@ -1,0 +1,12 @@
+{
+  "appId": "com.cundangba.app",
+  "appName": "存档吧！",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": true
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

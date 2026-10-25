@@ -1,0 +1,167 @@
+%% 《存档吧！》类图（架构师 高见远 · 2026-10-24）
+%% 数据模型 + Service 纯函数模块 + React ConfigContext + 页面/组件，与 docs/system_design.md 第 3 节一致
+
+classDiagram
+  direction LR
+
+  class CheckinRecord {
+    +string id
+    +string checkin_date
+    +string checkin_time
+    +string greeter
+    +string message
+    +string created_at
+  }
+
+  class AppConfig {
+    +string greeter
+    +string msg_morning
+    +string msg_noon
+    +string msg_night
+    +string btn_label
+    +string theme_id
+    +string city
+  }
+
+  class ThemePreset {
+    +string id
+    +string name
+    +Record~string,string~ vars
+  }
+
+  class TimePeriod {
+    <<enumeration>>
+    morning
+    noon
+    evening
+    night
+  }
+
+  class GreetingContent {
+    +string title
+    +string subtitle
+  }
+
+  class WeatherCurrent {
+    +number temp
+    +number feels_like
+    +number humidity
+    +number weather_code
+    +string weather_text
+    +boolean stale
+    +number fetched_at
+  }
+
+  class DailyForecastItem {
+    +string date
+    +number temp_max
+    +number temp_min
+    +number weather_code
+    +string weather_text
+  }
+
+  class CityOption {
+    +string name
+    +string country
+    +string admin
+    +number latitude
+    +number longitude
+  }
+
+  class CacheEntry {
+    +any value
+    +boolean fresh
+  }
+
+  class StorageService {
+    <<module>>
+    +readRecords() CheckinRecord[]
+    +writeRecords(records: CheckinRecord[]) boolean
+    +readConfig() AppConfig
+    +writeConfig(config: AppConfig) boolean
+    +readCache(key: string, ttlMs: number) CacheEntry
+    +writeCache(key: string, value: any) boolean
+    +readJSON(key: string, fallback: any) any
+    +writeJSON(key: string, value: any) boolean
+  }
+
+  class TimeService {
+    <<module>>
+    +getTimePeriod(date: Date) TimePeriod
+    +getGreeting(period: TimePeriod, config: AppConfig) GreetingContent
+  }
+
+  class CheckinService {
+    <<module>>
+    +getTodayRecord(records: CheckinRecord[], today: string) CheckinRecord
+    +canCheckin(records: CheckinRecord[], today: string) boolean
+    +createCheckinRecord(config: AppConfig, now: Date) CheckinRecord
+    +saveCheckin(config: AppConfig, now: Date) CheckinRecord
+    +calcStreakDays(records: CheckinRecord[], today: string) number
+    +getMonthCheckinDates(records: CheckinRecord[], year: number, month: number) Set~string~
+  }
+
+  class WeatherService {
+    <<module>>
+    +wmoToText(code: number) string
+    +wmoToIcon(code: number) string
+    +resolveCityCoords(name: string) Coords
+    +saveCityCoords(option: CityOption) boolean
+    +searchCity(query: string) Promise~CityOption[]~
+    +fetchCurrentWeather(city: string) Promise~WeatherResult~
+    +fetchDailyForecast(city: string) Promise~WeatherResult~
+  }
+
+  class ConfigContext {
+    <<React Context>>
+    +AppConfig config
+    +ThemePreset theme
+    +saveConfig(next: AppConfig) boolean
+    +resetConfig() void
+    +useConfig() ConfigContextValue
+  }
+
+  class App
+  class PhoneFrame
+  class TabBar
+  class StatusBar
+  class WeatherCard
+  class DiaoDiaoYu
+  class CheckinCard
+  class GreetingPage
+  class CalendarPage
+  class SettingsPage
+
+  CheckinService ..> StorageService : 读写存档记录
+  CheckinService ..> CheckinRecord : 创建/查询
+  CheckinService ..> AppConfig : 读取快照字段
+  WeatherService ..> StorageService : 缓存读写
+  WeatherService ..> WeatherCurrent
+  WeatherService ..> DailyForecastItem
+  WeatherService ..> CityOption
+  ConfigContext ..> StorageService : 配置持久化
+  ConfigContext ..> AppConfig
+  ConfigContext ..> ThemePreset
+  TimeService ..> AppConfig
+  TimeService ..> TimePeriod
+  TimeService ..> GreetingContent
+
+  App *-- PhoneFrame
+  App *-- ConfigContext
+  App --> GreetingPage
+  App --> CalendarPage
+  App --> SettingsPage
+  GreetingPage --> StatusBar
+  GreetingPage --> WeatherCard
+  GreetingPage --> DiaoDiaoYu
+  GreetingPage --> CheckinCard
+  GreetingPage ..> TimeService : 时段判定
+  GreetingPage ..> CheckinService : 当日记录
+  CalendarPage --> WeatherCard
+  CalendarPage --> DiaoDiaoYu
+  CalendarPage ..> CheckinService : 连续天数/月标记
+  WeatherCard ..> WeatherService
+  CheckinCard ..> CheckinService
+  SettingsPage ..> ConfigContext
+  SettingsPage ..> appConfigUtils : validateConfig
+  PhoneFrame --> TabBar

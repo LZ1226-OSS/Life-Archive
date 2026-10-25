@@ -1,0 +1,147 @@
+%% 《存档吧！》关键流程时序图（架构师 高见远 · 2026-10-24）
+%% 本文件包含 4 个独立 sequenceDiagram：① App 启动渲染问候 ② 晚间存档写入 ③ 自定义保存与即时生效 ④ 天气拉取降级链
+%% 说明：单个 Mermaid 渲染器通常只渲染文件中第一个图块；其余图块与 docs/system_design.md 第 4 节内容一致，可逐块复制到渲染器查看。
+
+sequenceDiagram
+  autonumber
+  participant U as 用户
+  participant App as App
+  participant CC as ConfigContext
+  participant SS as StorageService
+  participant GP as GreetingPage
+  participant TS as TimeService
+  participant CS as CheckinService
+  participant CK as CheckinCard
+  participant WC as WeatherCard
+  participant WS as WeatherService
+  participant OM as Open-Meteo API
+
+  U->>App: 打开应用
+  App->>CC: ConfigProvider 挂载
+  CC->>SS: readConfig()
+  SS-->>CC: AppConfig（与 DEFAULT_CONFIG 合并）
+  CC->>CC: 注入主题 CSS 变量（--bg/--primary/--accent/--text/--text-sub）
+  App->>GP: 渲染问候页（默认 Tab = greeting）
+  GP->>GP: useNow() 启动 30s interval + visibilitychange 监听
+  GP->>TS: getTimePeriod(now, config)（边界可配置，缺省 5/12/18，R18）
+  TS-->>GP: TimePeriod（如 'evening'）
+  GP->>TS: getGreeting(period, config)
+  TS-->>GP: { title, subtitle }
+  GP->>CS: getTodayRecord(readRecords(), formatDate(now))
+  CS->>SS: readRecords()
+  SS-->>CS: CheckinRecord[]
+  CS-->>GP: CheckinRecord | null
+  alt 晚间时段（evening，边界可配置 R18）
+    GP->>CK: 渲染打卡卡（未存档=主橙可点 / 已存档=置灰）
+    opt 当日未存档（R17）
+      GP->>GP: 弹出 CheckinPromptDialog（主按钮=存档 / 稍后再说或遮罩=本次会话关闭，跨日复位）
+    end
+  else 早/午/深夜
+    GP->>GP: 渲染快捷入口（早/午）或极简时间页（深夜）
+  end
+  opt 非深夜时段
+    GP->>WC: 渲染天气卡
+    WC->>WS: fetchCurrentWeather(config.city)
+    WS->>SS: readCache('archive.weather_current', TTL 30min)
+    alt 缓存新鲜
+      SS-->>WS: { value, fresh: true }
+      WS-->>WC: { data, stale: false }
+    else 缓存过期/缺失
+      WS->>OM: GET /v1/forecast（current 四字段）
+      alt 请求成功
+        OM-->>WS: 天气 JSON
+        WS->>SS: writeCache('archive.weather_current', data)
+        WS-->>WC: { data, stale: false }
+      else 请求失败
+        WS-->>WC: 旧缓存或 mock（stale: true，标注「数据可能不是最新」）
+      end
+    end
+  end
+  GP-->>U: 问候页完整渲染（≤1s）
+
+sequenceDiagram
+  autonumber
+  participant U as 用户
+  participant CK as CheckinCard
+  participant GP as GreetingPage
+  participant CS as CheckinService
+  participant SS as StorageService
+
+  U->>CK: 点击「存档」按钮（晚间，未存档态）
+  CK->>GP: onCheckin()
+  GP->>CS: canCheckin(records, today)
+  CS-->>GP: true（当日无记录）
+  GP->>CS: saveCheckin(config, now)
+  CS->>SS: readRecords()
+  SS-->>CS: CheckinRecord[]
+  CS->>CS: createCheckinRecord() 生成 id/日期/时间 + 快照 greeter、msg_night
+  CS->>CS: 按 checkin_date 查重（当日唯一）
+  CS->>SS: writeRecords([...records, newRecord])
+  SS-->>CS: true
+  CS-->>GP: CheckinRecord
+  GP->>GP: setTodayRecord(record) → 状态机进入「已存档」
+  GP-->>CK: todayRecord 更新
+  CK->>CK: 按钮立即置灰「已存档」+ 下方文案「今日已存档」
+  CK->>U: 呆呆鱼庆祝动效（上浮+旋转+8 颗星星粒子，800ms）
+  CK->>U: navigator.vibrate(40)（存在性守卫）
+  Note over U,CK: 全程无弹窗（IR2/IR3）；重复点击因置灰 disabled 不再触发
+
+sequenceDiagram
+  autonumber
+  participant U as 用户
+  participant SP as SettingsPage
+  participant AC as utils/appConfig
+  participant CC as ConfigContext
+  participant SS as StorageService
+  participant GP as GreetingPage
+  participant TS as TimeService
+
+  U->>SP: 修改提示人 / 三段文本 / 按钮文字 / 时间分段（R18）/ 主题 / 城市
+  SP->>SP: setDraft + 实时预览同步刷新（R05，输入即渲染；时段随草稿边界实时重算）
+  U->>SP: 点击「保存」
+  SP->>AC: validateConfig(draft)
+  AC-->>SP: { valid, errors }
+  alt 校验失败（任一字段空或超长，或时间分段非法/非递增，R18）
+    SP->>U: 输入框红描边 #E5484D + 行内红字，定位首个错误，阻止保存
+  else 校验通过
+    SP->>CC: saveConfig(draft)
+    CC->>SS: writeConfig({ ...DEFAULT_CONFIG, ...draft })
+    SS-->>CC: true
+    CC->>CC: setConfig(config) + useEffect 重新注入主题变量
+    CC-->>SP: true
+    SP->>U: 行内提示「已保存」（2s 后消失，不弹窗）
+    U->>GP: 切换回问候页（Tab）
+    GP->>TS: getGreeting(period, config)
+    TS-->>GP: 新文案（IR7 即时生效）
+    GP-->>U: 问候页/按钮文案/主题全部更新
+  end
+
+sequenceDiagram
+  autonumber
+  participant P as 页面（WeatherCard）
+  participant WS as WeatherService
+  participant SS as StorageService
+  participant OM as Open-Meteo API
+
+  P->>WS: fetchCurrentWeather(city) / fetchDailyForecast(city)
+  WS->>WS: resolveCityCoords(city)（archive.city_coords → 默认北京）
+  WS->>SS: readCache(key, ttlMs)（current 30min / daily 3h）
+  alt 缓存存在且未过期
+    SS-->>WS: { value, fresh: true }
+    WS-->>P: { data, stale: false }
+  else 缓存缺失或已过期
+    WS->>OM: GET api.open-meteo.com/v1/forecast
+    alt 请求成功
+      OM-->>WS: current / daily JSON
+      WS->>WS: normalize + wmoToText 映射中文
+      WS->>SS: writeCache(key, data)
+      WS-->>P: { data, stale: false }
+    else 请求失败（断网/超时/非 2xx）
+      alt 存在旧缓存
+        SS-->>WS: { value, fresh: false }
+        WS-->>P: { data: 旧缓存, stale: true } → 卡片标注「数据可能不是最新」
+      else 无任何缓存
+        WS-->>P: { data: MOCK, stale: true } → 页面不空白、不报错（IR8）
+      end
+    end
+  end
